@@ -1,286 +1,302 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, date
+from datetime import datetime, timedelta
 from database.connection import get_connection
 
-
 def show_receiving():
-    """Display receiving page"""
-    st.subheader("🚚 Receiving")
-    conn = get_connection()
-    c = conn.cursor()
+    """Display receiving/inventory page"""
+    st.subheader("📦 Receiving & Inventory Management")
+    supabase = get_connection()
+
+    # Navigation tabs
+    tab1, tab2, tab3 = st.tabs(["📥 Receive Inventory", "📊 Current Stock", "📋 Recent Receipts"])
+
+    with tab1:
+        show_receive_inventory_form(supabase)
+
+    with tab2:
+        show_current_stock(supabase)
+
+    with tab3:
+        show_recent_receipts(supabase)
+
+
+def show_receive_inventory_form(supabase):
+    """Show form for receiving inventory"""
+    st.markdown("### 📥 Receive New Inventory")
 
     try:
-        # Show recent batches first
-        st.markdown("### 📦 Recent Batches Received")
-        recent_batches = pd.read_sql("""
-                                     SELECT b.batch_number,
-                                            p.name as product_name,
-                                            p.sku,
-                                            s.name as supplier_name,
-                                            b.quantity_received,
-                                            b.quantity_remaining,
-                                            b.date_received,
-                                            b.expiration_date,
-                                            b.receiver_name,
-                                            b.coa_provided,
-                                            q.overall_status
-                                     FROM raw_material_batches b
-                                              LEFT JOIN products p ON b.product_id = p.id
-                                              LEFT JOIN suppliers s ON b.supplier_id = s.id
-                                              LEFT JOIN receiving_quality_checks q ON b.id = q.batch_id
-                                     ORDER BY b.created_at DESC LIMIT 20
-                                     """, conn)
+        # Get raw materials and products
+        products_response = supabase.table('products').select('*').execute()
+        products_df = pd.DataFrame(products_response.data) if products_response.data else pd.DataFrame()
 
-        if not recent_batches.empty:
-            st.dataframe(recent_batches, use_container_width=True)
-        else:
-            st.info("No batches received yet.")
+        if products_df.empty:
+            st.warning("No products found. Please add products first.")
+            return
 
-        # Receiving form
-        st.markdown("### 📥 Receive New Batch")
+        # Get suppliers
+        suppliers_response = supabase.table('suppliers').select('*').execute()
+        suppliers_df = pd.DataFrame(suppliers_response.data) if suppliers_response.data else pd.DataFrame()
 
-        # Get existing raw materials and suppliers
-        raw_materials = pd.read_sql("SELECT id, name, sku FROM products WHERE product_type='raw' ORDER BY name", conn)
-        suppliers = pd.read_sql("SELECT id, name FROM suppliers ORDER BY name", conn)
-
-        with st.form("receive_batch"):
+        with st.form("receive_inventory"):
             col1, col2 = st.columns(2)
 
             with col1:
-                st.markdown("**📦 Batch Information**")
+                # Product selection
+                product_options = [f"{row['name']} ({row['sku']}) - {row['product_type']}" 
+                                 for _, row in products_df.iterrows()]
+                selected_product = st.selectbox("Select Product", product_options)
 
-                # Material selection with option to add new
-                material_options = [f"{row['name']} ({row['sku']})" for _, row in raw_materials.iterrows()]
-                material_options.append("➕ Add New Raw Material")
-
-                selected_material = st.selectbox("Raw Material", material_options)
-
-                # Handle new material creation
-                if selected_material == "➕ Add New Raw Material":
-                    with st.expander("Add New Raw Material", expanded=True):
-                        new_material_name = st.text_input("Material Name")
-                        new_material_sku = st.text_input("SKU")
-                        new_material_category = st.text_input("Category")
-                        new_material_category_code = st.text_input("Category Code")
-
-                        if st.form_submit_button("Create Material First"):
-                            if new_material_name and new_material_sku:
-                                try:
-                                    c.execute("""
-                                              INSERT INTO products (name, sku, product_type, category, category_code, quantity_in_stock)
-                                              VALUES (%s, %s, 'raw', %s, %s, 0)
-                                              """, (new_material_name, new_material_sku, new_material_category,
-                                                    new_material_category_code))
-                                    conn.commit()
-                                    st.success(f"✅ Material '{new_material_name}' created! Please refresh to use it.")
-                                except Exception as e:
-                                    st.error(f"Error creating material: {e}")
-                            else:
-                                st.error("Please fill in material name and SKU")
-                    selected_material_id = None
-                else:
-                    # Get selected material ID and convert to int
-                    selected_idx = material_options.index(selected_material)
-                    selected_material_id = int(raw_materials.iloc[selected_idx]['id'])
-
-                batch_number = st.text_input("Batch Number", help="Supplier's batch/lot number")
                 quantity_received = st.number_input("Quantity Received", min_value=0.0, format="%.2f")
-
-                # Supplier selection
-                supplier_options = [""] + [row['name'] for _, row in suppliers.iterrows()]
-                selected_supplier_name = st.selectbox("Supplier", supplier_options)
-
-                supplier_id = None
-                if selected_supplier_name:
-                    supplier_id = int(suppliers[suppliers['name'] == selected_supplier_name]['id'].iloc[0])
+                unit_cost = st.number_input("Unit Cost", min_value=0.0, format="%.2f")
 
             with col2:
-                st.markdown("**📅 Dates & Details**")
-
-                date_received = st.date_input("Date Received", value=date.today())
-                expiration_date = st.date_input("Expiration Date", value=None)
-
-                price_per_unit = st.number_input("Price per Unit", min_value=0.0, format="%.2f")
-
-                receiver_name = st.text_input("Received By", help="Name of person receiving")
-
-                barcode = st.text_input("Barcode", help="Optional barcode/QR code")
-                kebs_smark = st.text_input("KEBS S-Mark Number", help="Quality certification number")
-
-                coa_provided = st.checkbox("Certificate of Analysis (COA) Provided")
-
-            # Quality check section
-            st.markdown("**🔍 Quality Check**")
-
-            col3, col4, col5 = st.columns(3)
-
-            quality_options = ["na", "acceptable", "not_acceptable"]
-            quality_labels = {"na": "N/A", "acceptable": "Acceptable", "not_acceptable": "Not Acceptable"}
-
-            with col3:
-                color_check = st.selectbox("Color", quality_options, format_func=lambda x: quality_labels[x])
-                packaging_check = st.selectbox("Packaging", quality_options, format_func=lambda x: quality_labels[x])
-                shelf_life_check = st.selectbox("Shelf Life", quality_options, format_func=lambda x: quality_labels[x])
-
-            with col4:
-                weight_check = st.selectbox("Weight", quality_options, format_func=lambda x: quality_labels[x])
-                coa_check = st.selectbox("COA Quality", quality_options, format_func=lambda x: quality_labels[x])
-                seal_integrity_check = st.selectbox("Seal Integrity", quality_options,
-                                                    format_func=lambda x: quality_labels[x])
-
-            with col5:
-                labelling_check = st.selectbox("Labelling", quality_options, format_func=lambda x: quality_labels[x])
-                storage_conditions_check = st.selectbox("Storage Conditions", quality_options,
-                                                        format_func=lambda x: quality_labels[x])
-
-                # Overall status
-                overall_status = st.selectbox("Overall Status", ["accepted", "rejected"])
-
-            quality_notes = st.text_area("Quality Check Notes", help="Additional observations or comments")
-
-            submitted = st.form_submit_button("📦 Receive Batch", type="primary")
-
-            if submitted and selected_material_id and batch_number and quantity_received > 0 and receiver_name:
-                try:
-                    c.execute("BEGIN")
-
-                    # Convert values to proper types for PostgreSQL
-                    material_id = int(selected_material_id)
-                    qty_received = float(quantity_received)
-                    qty_remaining = float(quantity_received)
-                    price_unit = float(price_per_unit)
-                    supplier_id_clean = int(supplier_id) if supplier_id else None
-
-                    # Handle empty strings for optional fields
-                    barcode_clean = barcode if barcode else None
-                    kebs_smark_clean = kebs_smark if kebs_smark else None
-                    expiration_date_clean = expiration_date if expiration_date else None
-
-                    # Insert batch record
-                    c.execute("""
-                              INSERT INTO raw_material_batches
-                              (product_id, batch_number, quantity_received, quantity_remaining, date_received,
-                               expiration_date, barcode, coa_provided, kebs_smark_number, receiver_name,
-                               supplier_id, price_per_unit)
-                              VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
-                              """, (material_id, batch_number, qty_received, qty_remaining,
-                                    date_received, expiration_date_clean, barcode_clean, coa_provided, kebs_smark_clean,
-                                    receiver_name, supplier_id_clean, price_unit))
-
-                    batch_id = c.fetchone()[0]
-
-                    # Insert quality check record
-                    quality_notes_clean = quality_notes if quality_notes else None
-
-                    c.execute("""
-                              INSERT INTO receiving_quality_checks
-                              (batch_id, color, packaging, shelf_life, weight, coa, seal_integrity,
-                               labelling, storage_conditions, overall_status, notes)
-                              VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                              """, (batch_id, color_check, packaging_check, shelf_life_check, weight_check,
-                                    coa_check, seal_integrity_check, labelling_check, storage_conditions_check,
-                                    overall_status, quality_notes_clean))
-
-                    # Update product inventory (only if accepted)
-                    if overall_status == "accepted":
-                        # Update raw material stock
-                        c.execute("""
-                                  UPDATE products
-                                  SET quantity_in_stock = quantity_in_stock + %s,
-                                      price_paid        = %s
-                                  WHERE id = %s
-                                  """, (qty_received, price_unit, material_id))
-
-                        # Add transaction record
-                        try:
-                            c.execute("""
-                                      INSERT INTO transactions (product_id, tx_type, quantity, price, notes)
-                                      VALUES (%s, 'in', %s, %s, %s)
-                                      """, (material_id, qty_received, price_unit,
-                                            f"Received batch {batch_number} from {selected_supplier_name or 'Unknown'}"))
-                        except Exception:
-                            # Transaction logging is optional
-                            pass
-
-                    conn.commit()
-
-                    if overall_status == "accepted":
-                        st.success(f"✅ Batch {batch_number} received successfully and added to inventory!")
-                    else:
-                        st.warning(f"⚠️ Batch {batch_number} received but REJECTED - not added to inventory")
-
-                    st.balloons()
-                    st.rerun()
-
-                except Exception as e:
-                    conn.rollback()
-                    st.error(f"Error receiving batch: {e}")
-                    import traceback
-                    st.code(traceback.format_exc())
-            elif submitted:
-                st.error("Please fill in all required fields: Material, Batch Number, Quantity, and Receiver Name")
-
-        # Batch tracking section
-        st.markdown("### 🔍 Batch Tracking")
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-            search_batch = st.text_input("Search Batch Number")
-            if search_batch:
-                batch_details = pd.read_sql("""
-                                            SELECT b.batch_number,
-                                                   p.name as product_name,
-                                                   p.sku,
-                                                   s.name as supplier_name,
-                                                   b.quantity_received,
-                                                   b.quantity_remaining,
-                                                   b.date_received,
-                                                   b.expiration_date,
-                                                   b.receiver_name,
-                                                   q.overall_status,
-                                                   q.notes
-                                            FROM raw_material_batches b
-                                                     LEFT JOIN products p ON b.product_id = p.id
-                                                     LEFT JOIN suppliers s ON b.supplier_id = s.id
-                                                     LEFT JOIN receiving_quality_checks q ON b.id = q.batch_id
-                                            WHERE b.batch_number ILIKE %s
-                                            ORDER BY b.created_at DESC
-                                            """, conn, params=(f"%{search_batch}%",))
-
-                if not batch_details.empty:
-                    st.dataframe(batch_details, use_container_width=True)
+                # Supplier selection
+                if not suppliers_df.empty:
+                    supplier_options = ["None"] + suppliers_df["name"].tolist()
+                    selected_supplier = st.selectbox("Supplier", supplier_options)
                 else:
-                    st.info("No batches found")
+                    selected_supplier = "None"
 
-        with col2:
-            if st.button("📊 Show Expiring Batches"):
+                # Receipt details
+                receipt_date = st.date_input("Receipt Date", value=datetime.now().date())
+                reference_number = st.text_input("Reference/PO Number")
+
+            # Batch information (for raw materials)
+            st.markdown("#### 📦 Batch Information (Optional)")
+            col3, col4 = st.columns(2)
+            
+            with col3:
+                batch_number = st.text_input("Batch Number")
+                expiry_date = st.date_input("Expiry Date", value=None)
+                
+            with col4:
+                location = st.text_input("Storage Location")
+                notes = st.text_area("Notes")
+
+            submitted = st.form_submit_button("📥 Receive Inventory", type="primary")
+
+            if submitted and quantity_received > 0:
                 try:
-                    expiring_batches = pd.read_sql("""
-                                                   SELECT b.batch_number,
-                                                          p.name                             as product_name,
-                                                          b.quantity_remaining,
-                                                          b.expiration_date,
-                                                          (b.expiration_date - CURRENT_DATE) as days_until_expiry
-                                                   FROM raw_material_batches b
-                                                            JOIN products p ON b.product_id = p.id
-                                                   WHERE b.expiration_date IS NOT NULL
-                                                     AND b.expiration_date <= CURRENT_DATE + INTERVAL '30 days'
-                                                     AND b.quantity_remaining
-                                                       > 0
-                                                   ORDER BY b.expiration_date
-                                                   """, conn)
+                    # Get selected product details
+                    product_idx = product_options.index(selected_product)
+                    product = products_df.iloc[product_idx]
 
-                    if not expiring_batches.empty:
-                        st.warning("⚠️ Batches expiring within 30 days:")
-                        st.dataframe(expiring_batches)
-                    else:
-                        st.success("✅ No batches expiring soon")
+                    # Get supplier ID
+                    supplier_id = None
+                    if selected_supplier != "None" and not suppliers_df.empty:
+                        supplier_row = suppliers_df[suppliers_df["name"] == selected_supplier]
+                        if not supplier_row.empty:
+                            supplier_id = supplier_row.iloc[0]["id"]
+
+                    # Create receipt record
+                    receipt_data = {
+                        "product_id": product["id"],
+                        "product_name": product["name"],
+                        "supplier_id": supplier_id,
+                        "quantity_received": quantity_received,
+                        "unit_cost": unit_cost,
+                        "total_cost": quantity_received * unit_cost,
+                        "receipt_date": receipt_date.isoformat(),
+                        "reference_number": reference_number,
+                        "notes": notes
+                    }
+
+                    receipt_result = supabase.table('inventory_receipts').insert(receipt_data).execute()
+
+                    if receipt_result.data:
+                        receipt_id = receipt_result.data[0]['id']
+
+                        # Update product inventory
+                        current_stock = product.get('quantity_in_stock', 0)
+                        current_cost = product.get('price_paid', 0)
+                        
+                        # Calculate weighted average cost
+                        if current_stock > 0:
+                            total_value = (current_stock * current_cost) + (quantity_received * unit_cost)
+                            new_average_cost = total_value / (current_stock + quantity_received)
+                        else:
+                            new_average_cost = unit_cost
+
+                        new_stock = current_stock + quantity_received
+
+                        # Update product
+                        update_data = {
+                            'quantity_in_stock': new_stock,
+                            'price_paid': new_average_cost
+                        }
+                        
+                        if supplier_id:
+                            update_data['supplier_id'] = supplier_id
+
+                        supabase.table('products').update(update_data).eq('id', product['id']).execute()
+
+                        # Create batch record if batch information provided
+                        if batch_number or expiry_date:
+                            batch_data = {
+                                "product_id": product["id"],
+                                "batch_number": batch_number or f"BATCH-{receipt_id}",
+                                "quantity": quantity_received,
+                                "receipt_id": receipt_id,
+                                "location": location,
+                                "notes": notes
+                            }
+                            
+                            if expiry_date:
+                                batch_data["expiry_date"] = expiry_date.isoformat()
+
+                            supabase.table('batches').insert(batch_data).execute()
+
+                        st.success(f"✅ Successfully received {quantity_received} units of {product['name']}")
+                        st.success(f"📦 New stock level: {new_stock} units")
+                        if batch_number:
+                            st.success(f"🏷️ Batch {batch_number} created")
+
+                        st.rerun()
+
                 except Exception as e:
-                    st.info("Expiration tracking not available")
+                    st.error(f"Error processing receipt: {e}")
 
     except Exception as e:
-        st.error(f"Receiving error: {e}")
-        import traceback
-        st.code(traceback.format_exc())
+        st.error(f"Error loading receiving form: {e}")
+
+
+def show_current_stock(supabase):
+    """Show current stock levels"""
+    st.markdown("### 📊 Current Stock Levels")
+
+    try:
+        # Get all products with stock information
+        response = supabase.table('products').select('*').execute()
+        df = pd.DataFrame(response.data) if response.data else pd.DataFrame()
+
+        if not df.empty:
+            # Add stock status
+            df['stock_status'] = df.apply(lambda row: 
+                '🔴 Out of Stock' if row.get('quantity_in_stock', 0) == 0
+                else '🟡 Low Stock' if row.get('quantity_in_stock', 0) <= 10
+                else '🟢 In Stock', axis=1
+            )
+
+            # Summary metrics
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                total_products = len(df)
+                st.metric("Total Products", total_products)
+                
+            with col2:
+                out_of_stock = len(df[df['quantity_in_stock'] == 0])
+                st.metric("Out of Stock", out_of_stock)
+                
+            with col3:
+                low_stock = len(df[(df['quantity_in_stock'] > 0) & (df['quantity_in_stock'] <= 10)])
+                st.metric("Low Stock", low_stock)
+                
+            with col4:
+                total_value = (df['quantity_in_stock'] * df.get('price_paid', 0)).sum()
+                st.metric("Total Inventory Value", f"${total_value:.2f}")
+
+            # Filter options
+            col_filter1, col_filter2, col_filter3 = st.columns(3)
+            
+            with col_filter1:
+                product_type_filter = st.selectbox("Product Type", 
+                                                 ["All"] + list(df['product_type'].unique()))
+            
+            with col_filter2:
+                stock_status_filter = st.selectbox("Stock Status", 
+                                                 ["All", "In Stock", "Low Stock", "Out of Stock"])
+                                                 
+            with col_filter3:
+                category_filter = st.selectbox("Category", 
+                                             ["All"] + list(df['category'].dropna().unique()))
+
+            # Apply filters
+            filtered_df = df.copy()
+            
+            if product_type_filter != "All":
+                filtered_df = filtered_df[filtered_df['product_type'] == product_type_filter]
+                
+            if stock_status_filter != "All":
+                if stock_status_filter == "Out of Stock":
+                    filtered_df = filtered_df[filtered_df['quantity_in_stock'] == 0]
+                elif stock_status_filter == "Low Stock":
+                    filtered_df = filtered_df[(filtered_df['quantity_in_stock'] > 0) & 
+                                            (filtered_df['quantity_in_stock'] <= 10)]
+                elif stock_status_filter == "In Stock":
+                    filtered_df = filtered_df[filtered_df['quantity_in_stock'] > 10]
+                    
+            if category_filter != "All":
+                filtered_df = filtered_df[filtered_df['category'] == category_filter]
+
+            # Display filtered results
+            if not filtered_df.empty:
+                # Select columns to display
+                display_columns = ['name', 'sku', 'product_type', 'category', 'quantity_in_stock', 
+                                 'price_paid', 'stock_status']
+                display_df = filtered_df[display_columns]
+                
+                st.dataframe(display_df, use_container_width=True)
+                
+                # Export option
+                csv = display_df.to_csv(index=False)
+                st.download_button(
+                    label="📥 Export to CSV",
+                    data=csv,
+                    file_name=f"inventory_report_{datetime.now().strftime('%Y%m%d')}.csv",
+                    mime="text/csv"
+                )
+            else:
+                st.info("No products match the selected filters.")
+        else:
+            st.info("No products found.")
+
+    except Exception as e:
+        st.error(f"Error loading stock information: {e}")
+
+
+def show_recent_receipts(supabase):
+    """Show recent inventory receipts"""
+    st.markdown("### 📋 Recent Receipts")
+
+    try:
+        # Get recent receipts
+        response = supabase.table('inventory_receipts').select('*').order('receipt_date', desc=True).limit(20).execute()
+        
+        if response.data:
+            df = pd.DataFrame(response.data)
+            
+            # Format dates and currency
+            df['receipt_date'] = pd.to_datetime(df['receipt_date']).dt.strftime('%Y-%m-%d')
+            df['total_cost'] = df['total_cost'].apply(lambda x: f"${x:.2f}")
+            df['unit_cost'] = df['unit_cost'].apply(lambda x: f"${x:.2f}")
+            
+            # Select and rename columns for display
+            display_columns = {
+                'receipt_date': 'Date',
+                'product_name': 'Product',
+                'quantity_received': 'Quantity',
+                'unit_cost': 'Unit Cost',
+                'total_cost': 'Total Cost',
+                'reference_number': 'Reference'
+            }
+            
+            display_df = df.rename(columns=display_columns)[list(display_columns.values())]
+            st.dataframe(display_df, use_container_width=True)
+            
+            # Summary for recent receipts
+            total_receipts = len(df)
+            total_value = df['quantity_received'].sum() if 'quantity_received' in df.columns else 0
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Recent Receipts", total_receipts)
+            with col2:
+                st.metric("Total Quantity Received", f"{total_value:.0f}")
+                
+        else:
+            st.info("No receipts recorded yet")
+
+    except Exception as e:
+        st.error(f"Error loading recent receipts: {e}")
