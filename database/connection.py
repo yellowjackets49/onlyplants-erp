@@ -7,8 +7,30 @@ from urllib.parse import urlparse
 def get_connection():
     """Get database connection (cached)"""
     try:
-        # Get DATABASE_URL from Streamlit secrets
-        database_url = st.secrets["db"]["DATABASE_URL"]
+        # Try different ways to get DATABASE_URL from secrets
+        database_url = None
+        
+        # First try: st.secrets["db"]["DATABASE_URL"]
+        try:
+            database_url = st.secrets["db"]["DATABASE_URL"]
+        except KeyError:
+            pass
+        
+        # Second try: st.secrets["DATABASE_URL"]
+        if not database_url:
+            try:
+                database_url = st.secrets["DATABASE_URL"]
+            except KeyError:
+                pass
+        
+        # Third try: environment variable as fallback
+        if not database_url:
+            database_url = os.getenv("DATABASE_URL")
+        
+        if not database_url:
+            st.error("❌ DATABASE_URL not found in secrets or environment variables.")
+            st.error("Please check your .streamlit/secrets.toml file structure.")
+            st.stop()
         
         # Parse the DATABASE_URL
         parsed = urlparse(database_url)
@@ -24,9 +46,6 @@ def get_connection():
         
         return conn
         
-    except KeyError:
-        st.error("❌ DATABASE_URL not found in secrets. Please add it to your Streamlit secrets.")
-        st.stop()
     except psycopg2.OperationalError as e:
         st.error(f"❌ Could not connect to PostgreSQL: {e}")
         st.stop()
