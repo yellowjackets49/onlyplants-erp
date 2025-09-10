@@ -7,9 +7,9 @@ def calculate_product_cost(product_id):
     """Calculate cost of finished product based on BOM"""
     supabase = get_connection()
     try:
-        # Get BOM data with joined product information
+        # Get BOM data with raw material prices
         bom_response = supabase.table('bill_of_materials').select(
-            'quantity_required, products:raw_material_id(price_paid)'
+            'quantity_required, raw_material:raw_material_id(price_paid)'
         ).eq('finished_product_id', product_id).execute()
         
         if not bom_response.data:
@@ -18,7 +18,8 @@ def calculate_product_cost(product_id):
         total_cost = 0
         for item in bom_response.data:
             quantity = item.get('quantity_required', 0)
-            price = item.get('products', {}).get('price_paid', 0) if item.get('products') else 0
+            raw_material = item.get('raw_material', {})
+            price = raw_material.get('price_paid', 0) if raw_material else 0
             total_cost += quantity * price
             
         return float(total_cost)
@@ -48,6 +49,17 @@ def download_template(template_type):
             "QuantityRequired": 0,
             "Volume": 0
         }])
-    df.to_excel(buffer, index=False, engine="openpyxl")
+    
+    # Use openpyxl if available, otherwise use xlsxwriter
+    try:
+        df.to_excel(buffer, index=False, engine="openpyxl")
+    except ImportError:
+        try:
+            df.to_excel(buffer, index=False, engine="xlsxwriter")
+        except ImportError:
+            # Fallback to CSV if no Excel engines available
+            csv_data = df.to_csv(index=False)
+            return csv_data.encode('utf-8')
+    
     buffer.seek(0)
     return buffer

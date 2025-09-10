@@ -49,11 +49,17 @@ def main():
     st.title("📦 Inventory & BOM Management")
 
     try:
-        # Initialize database
-        conn = get_connection()
-        create_tables(conn)
+        # Test Supabase connection
+        supabase = get_connection()
+        
+        # Test the connection with a simple query
+        test_response = supabase.table('suppliers').select('id').limit(1).execute()
+        
+        st.success("✅ Connected to Supabase successfully!")
+        
     except Exception as e:
-        st.error(f"Database connection error: {e}")
+        st.error(f"❌ Database connection error: {e}")
+        st.error("Please check your Supabase credentials in secrets.toml")
         st.stop()
 
     # Navigation
