@@ -1,59 +1,37 @@
 import streamlit as st
-import psycopg2
 import os
-from urllib.parse import urlparse
+from supabase import create_client, Client
 
 @st.cache_resource
-def get_connection():
-    """Get database connection (cached)"""
+def get_supabase_client():
+    """Get Supabase client (cached)"""
     try:
-        # Try different ways to get DATABASE_URL from secrets
-        database_url = None
-        
-        # First try: st.secrets["db"]["DATABASE_URL"]
+        # Try to get from Streamlit secrets first
         try:
-            database_url = st.secrets["db"]["DATABASE_URL"]
+            url = st.secrets["supabase"]["url"]
+            key = st.secrets["supabase"]["key"]
         except KeyError:
-            pass
+            # Fallback to environment variables
+            url = os.getenv("SUPABASE_URL")
+            key = os.getenv("SUPABASE_KEY")
         
-        # Second try: st.secrets["DATABASE_URL"]
-        if not database_url:
-            try:
-                database_url = st.secrets["DATABASE_URL"]
-            except KeyError:
-                pass
-        
-        # Third try: environment variable as fallback
-        if not database_url:
-            database_url = os.getenv("DATABASE_URL")
-        
-        if not database_url:
-            st.error("❌ DATABASE_URL not found in secrets or environment variables.")
-            st.error("Please check your .streamlit/secrets.toml file structure.")
+        if not url or not key:
+            st.error("❌ Supabase URL and key not found in secrets or environment variables.")
+            st.error("Please add them to your .streamlit/secrets.toml file.")
             st.stop()
         
-        # Parse the DATABASE_URL
-        parsed = urlparse(database_url)
+        supabase: Client = create_client(url, key)
+        return supabase
         
-        conn = psycopg2.connect(
-            host=parsed.hostname,
-            database=parsed.path[1:],  # Remove leading slash
-            user=parsed.username,
-            password=parsed.password,
-            port=parsed.port or 5432,
-            sslmode='require'  # Required for Supabase
-        )
-        
-        return conn
-        
-    except psycopg2.OperationalError as e:
-        st.error(f"❌ Could not connect to PostgreSQL: {e}")
-        st.stop()
     except Exception as e:
-        st.error(f"❌ Database connection error: {e}")
+        st.error(f"❌ Supabase connection error: {e}")
         st.stop()
 
+def get_connection():
+    """Get Supabase client (for backward compatibility)"""
+    return get_supabase_client()
+
 def get_cursor():
-    """Get database cursor"""
-    conn = get_connection()
-    return conn, conn.cursor()
+    """Get Supabase client (for backward compatibility with existing code)"""
+    client = get_supabase_client()
+    return client, client  # Return client twice for compatibility
