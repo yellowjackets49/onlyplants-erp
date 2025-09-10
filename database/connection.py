@@ -1,31 +1,37 @@
 import streamlit as st
 import psycopg2
 import os
+from urllib.parse import urlparse
 
+@st.cache_resource
 def get_connection():
-    """Get database connection (non-cached for debugging)"""
+    """Get database connection (cached)"""
     try:
-        db_cfg = st.secrets["db"]
-    except Exception:
-        db_cfg = {}
-
-    host = db_cfg.get("host") or os.getenv("PGHOST", "127.0.0.1")
-    database = db_cfg.get("database") or os.getenv("PGDATABASE", "inventory")
-    user = db_cfg.get("user") or os.getenv("PGUSER", "admin")
-    password = db_cfg.get("password") or os.getenv("PGPASSWORD", "admin")
-    port = int(db_cfg.get("port") or os.getenv("PGPORT", "5432"))
-
-    try:
+        # Get DATABASE_URL from Streamlit secrets
+        database_url = st.secrets["db"]["DATABASE_URL"]
+        
+        # Parse the DATABASE_URL
+        parsed = urlparse(database_url)
+        
         conn = psycopg2.connect(
-            host=host,
-            database=database,
-            user=user,
-            password=password,
-            port=port,
+            host=parsed.hostname,
+            database=parsed.path[1:],  # Remove leading slash
+            user=parsed.username,
+            password=parsed.password,
+            port=parsed.port or 5432,
+            sslmode='require'  # Required for Supabase
         )
+        
         return conn
+        
+    except KeyError:
+        st.error("❌ DATABASE_URL not found in secrets. Please add it to your Streamlit secrets.")
+        st.stop()
     except psycopg2.OperationalError as e:
-        st.error(f"Could not connect to PostgreSQL: {e}")
+        st.error(f"❌ Could not connect to PostgreSQL: {e}")
+        st.stop()
+    except Exception as e:
+        st.error(f"❌ Database connection error: {e}")
         st.stop()
 
 def get_cursor():
