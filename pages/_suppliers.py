@@ -3,11 +3,16 @@ import pandas as pd
 from database.connection import get_connection
 
 def show_suppliers():
-    """Display suppliers page"""
+    """Display suppliers page - UPDATED VERSION"""
     st.subheader("🏭 Suppliers")
-    supabase = get_connection()
-
+    
+    # Debug info to confirm we're using the right version
+    st.write("DEBUG: Using Supabase version of suppliers page")
+    
     try:
+        supabase = get_connection()
+        st.write(f"DEBUG: Connection type: {type(supabase)}")
+        
         # Get all suppliers
         response = supabase.table('suppliers').select('*').execute()
         suppliers = pd.DataFrame(response.data) if response.data else pd.DataFrame()
@@ -46,3 +51,5 @@ def show_suppliers():
 
     except Exception as e:
         st.error(f"❌ Error in suppliers: {e}")
+        import traceback
+        st.code(traceback.format_exc())
