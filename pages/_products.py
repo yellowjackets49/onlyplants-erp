@@ -13,13 +13,9 @@ def show_products():
         response = supabase.table('products').select('*').eq('product_type', 'finished').execute()
         df = pd.DataFrame(response.data) if response.data else pd.DataFrame()
 
-        # Try to calculate costs
-        try:
-            from utils.helpers import calculate_product_cost
-            if not df.empty:
-                df["Cost"] = df["id"].apply(calculate_product_cost)
-        except ImportError:
-            st.info("Cost calculation not available - utils.helpers module not found")
+        # Calculate costs locally without importing utils
+        if not df.empty:
+            df["Cost"] = df["id"].apply(lambda pid: calculate_product_cost_local(pid, supabase))
 
         if not df.empty:
             st.dataframe(df)
@@ -48,7 +44,7 @@ def show_products():
 
             if submitted and name and sku:
                 supplier_id = None
-                if supplier != "None":
+                if supplier != "None" and not suppliers_df.empty:
                     supplier_row = suppliers_df[suppliers_df["name"] == supplier]
                     if not supplier_row.empty:
                         supplier_id = supplier_row.iloc[0]["id"]
@@ -73,3 +69,26 @@ def show_products():
                     
     except Exception as e:
         st.error(f"Products error: {e}")
+
+
+def calculate_product_cost_local(product_id, supabase):
+    """Calculate cost of finished product based on BOM (local version)"""
+    try:
+        # Get BOM data with raw material prices
+        bom_response = supabase.table('bill_of_materials').select(
+            'quantity_required, raw_material:raw_material_id(price_paid)'
+        ).eq('finished_product_id', product_id).execute()
+        
+        if not bom_response.data:
+            return 0
+            
+        total_cost = 0
+        for item in bom_response.data:
+            quantity = item.get('quantity_required', 0)
+            raw_material = item.get('raw_material', {})
+            price = raw_material.get('price_paid', 0) if raw_material else 0
+            total_cost += quantity * price
+            
+        return float(total_cost)
+    except Exception as e:
+        return 0

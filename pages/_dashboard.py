@@ -16,13 +16,9 @@ def show_dashboard():
         fin_response = supabase.table('products').select('*').eq('product_type', 'finished').execute()
         fin_df = pd.DataFrame(fin_response.data) if fin_response.data else pd.DataFrame()
         
-        # Calculate costs for finished products
+        # Calculate costs for finished products - do this locally without importing utils
         if not fin_df.empty:
-            try:
-                fin_df["Cost"] = fin_df["id"].apply(lambda pid: calculate_product_cost(pid, supabase))
-            except Exception as e:
-                st.warning(f"Cost calculation unavailable: {e}")
-                fin_df["Cost"] = 0
+            fin_df["Cost"] = fin_df["id"].apply(lambda pid: calculate_product_cost_local(pid, supabase))
 
         # Display inventory sections
         col1, col2 = st.columns(2)
@@ -121,10 +117,12 @@ def show_dashboard():
             
     except Exception as e:
         st.error(f"Dashboard error: {e}")
+        import traceback
+        st.code(traceback.format_exc())
 
 
-def calculate_product_cost(product_id, supabase):
-    """Calculate cost of finished product based on BOM"""
+def calculate_product_cost_local(product_id, supabase):
+    """Calculate cost of finished product based on BOM (local version)"""
     try:
         # Get BOM data with raw material prices
         bom_response = supabase.table('bill_of_materials').select(
