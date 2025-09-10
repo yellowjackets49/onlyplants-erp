@@ -10,9 +10,8 @@ if current_dir not in sys.path:
 try:
     # Import modules with updated names
     from database.connection import get_connection
-    from database.schema import create_tables
     from pages._dashboard import show_dashboard
-    from pages._suppliers import show_suppliers
+    from pages._suppliers import show_suppliers_v2 as show_suppliers
     from pages._raw_materials import show_raw_materials
     from pages._products import show_products
     from pages._bom import show_bom
@@ -72,7 +71,7 @@ def main():
         if choice == "Dashboard":
             show_dashboard()
         elif choice == "Suppliers":
-            show_suppliers()
+            show_suppliers()  # Now uses the new version
         elif choice == "Raw Materials":
             show_raw_materials()
         elif choice == "Products":
