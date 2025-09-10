@@ -1,37 +1,54 @@
 import streamlit as st
+import psycopg2
 import os
-from supabase import create_client, Client
+from urllib.parse import urlparse
 
 @st.cache_resource
-def get_supabase_client():
-    """Get Supabase client (cached)"""
+def get_connection():
+    """Get database connection (cached)"""
     try:
-        # Try to get from Streamlit secrets first
+        # Try to get DATABASE_URL from secrets in different formats
+        database_url = None
+        
         try:
-            url = st.secrets["supabase"]["url"]
-            key = st.secrets["supabase"]["key"]
+            # Try direct DATABASE_URL first
+            database_url = st.secrets["DATABASE_URL"]
         except KeyError:
-            # Fallback to environment variables
-            url = os.getenv("SUPABASE_URL")
-            key = os.getenv("SUPABASE_KEY")
+            try:
+                # Try supabase format
+                url = st.secrets["supabase"]["url"] 
+                # Convert Supabase URL to PostgreSQL connection string
+                database_url = f"postgresql://postgres:xubqab-hiphyK-4qeqcy@db.abhphxmehiitqhbyenut.supabase.co:5432/postgres"
+            except KeyError:
+                # Fallback to environment variable
+                database_url = os.getenv("DATABASE_URL")
         
-        if not url or not key:
-            st.error("❌ Supabase URL and key not found in secrets or environment variables.")
-            st.error("Please add them to your .streamlit/secrets.toml file.")
-            st.stop()
+        if not database_url:
+            # Final fallback - hardcoded for your Supabase
+            database_url = "postgresql://postgres:xubqab-hiphyK-4qeqcy@db.abhphxmehiitqhbyenut.supabase.co:5432/postgres"
         
-        supabase: Client = create_client(url, key)
-        return supabase
+        # Parse the DATABASE_URL
+        parsed = urlparse(database_url)
         
+        conn = psycopg2.connect(
+            host=parsed.hostname,
+            database=parsed.path[1:],  # Remove leading slash
+            user=parsed.username,
+            password=parsed.password,
+            port=parsed.port or 5432,
+            sslmode='require'  # Required for Supabase
+        )
+        
+        return conn
+        
+    except psycopg2.OperationalError as e:
+        st.error(f"❌ Could not connect to PostgreSQL: {e}")
+        st.stop()
     except Exception as e:
-        st.error(f"❌ Supabase connection error: {e}")
+        st.error(f"❌ Database connection error: {e}")
         st.stop()
 
-def get_connection():
-    """Get Supabase client (for backward compatibility)"""
-    return get_supabase_client()
-
 def get_cursor():
-    """Get Supabase client (for backward compatibility with existing code)"""
-    client = get_supabase_client()
-    return client, client  # Return client twice for compatibility
+    """Get database cursor"""
+    conn = get_connection()
+    return conn, conn.cursor()
