@@ -18,7 +18,4 @@ def get_connection():
     """Get Supabase client (for backward compatibility)"""
     return get_supabase_client()
 
-def get_cursor():
-    """Get Supabase client (for backward compatibility with existing code)"""
-    client = get_supabase_client()
-    return client, client
+# Remove get_cursor - we'll use direct Supabase calls instead

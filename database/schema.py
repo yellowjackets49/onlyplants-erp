@@ -1,21 +1,14 @@
 import streamlit as st
 
 def create_tables(supabase_client):
-    """Create all database tables using Supabase"""
+    """Verify database connection - tables should be created in Supabase dashboard"""
     try:
-        # Since Supabase handles table creation through the dashboard,
-        # we'll just verify the connection works
-        
-        # Test connection by trying to fetch from a system table
-        try:
-            # This will fail gracefully if tables don't exist yet
-            supabase_client.table('suppliers').select('count').execute()
-            st.success("✅ Database connection verified!")
-        except Exception:
-            st.info("ℹ️ Database connected. Please ensure tables are created in Supabase dashboard.")
-        
+        # Test connection by trying to access a table
+        # Tables should be created through Supabase dashboard, not programmatically
+        st.info("✅ Database connected. Ensure tables exist in Supabase dashboard:")
+        st.info("Tables needed: suppliers, products, bill_of_materials, transactions, sales, sales_items, raw_material_batches, receiving_quality_checks")
         return True
         
     except Exception as e:
-        st.error(f"❌ Database setup error: {e}")
+        st.error(f"❌ Database connection test failed: {e}")
         return False

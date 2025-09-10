@@ -6,16 +6,18 @@ from database.connection import get_connection
 def show_products():
     """Display products page"""
     st.subheader("🏭 Finished Products")
-    conn = get_connection()
-    c = conn.cursor()
+    supabase = get_connection()
 
     try:
-        df = pd.read_sql("SELECT * FROM products WHERE product_type='finished'", conn)
+        # Get finished products
+        response = supabase.table('products').select('*').eq('product_type', 'finished').execute()
+        df = pd.DataFrame(response.data) if response.data else pd.DataFrame()
 
-        # Try to calculate costs, but don't fail if utils.helpers isn't available
+        # Try to calculate costs
         try:
             from utils.helpers import calculate_product_cost
-            df["Cost"] = df["id"].apply(calculate_product_cost)
+            if not df.empty:
+                df["Cost"] = df["id"].apply(calculate_product_cost)
         except ImportError:
             st.info("Cost calculation not available - utils.helpers module not found")
 
@@ -29,11 +31,13 @@ def show_products():
             name = st.text_input("Product Name")
             sku = st.text_input("SKU")
             category = st.text_input("Category")
+            category_code = st.text_input("Category Code")
             price_selling = st.number_input("Selling Price", min_value=0.0, format="%.2f")
 
             # Get suppliers
             try:
-                suppliers_df = pd.read_sql("SELECT id, name FROM suppliers", conn)
+                suppliers_response = supabase.table('suppliers').select('id, name').execute()
+                suppliers_df = pd.DataFrame(suppliers_response.data) if suppliers_response.data else pd.DataFrame()
                 supplier_options = ["None"] + suppliers_df["name"].tolist()
             except:
                 supplier_options = ["None"]
@@ -45,20 +49,27 @@ def show_products():
             if submitted and name and sku:
                 supplier_id = None
                 if supplier != "None":
-                    c.execute("SELECT id FROM suppliers WHERE name=%s", (supplier,))
-                    result = c.fetchone()
-                    if result:
-                        supplier_id = result[0]
+                    supplier_row = suppliers_df[suppliers_df["name"] == supplier]
+                    if not supplier_row.empty:
+                        supplier_id = supplier_row.iloc[0]["id"]
 
                 try:
-                    c.execute("""
-                              INSERT INTO products (name, sku, product_type, category, price_selling, supplier_id)
-                              VALUES (%s, %s, 'finished', %s, %s, %s) ON CONFLICT (sku) DO NOTHING
-                              """, (name, sku, category, price_selling, supplier_id))
-                    conn.commit()
+                    data = {
+                        "name": name,
+                        "sku": sku,
+                        "product_type": "finished",
+                        "category": category,
+                        "category_code": category_code,
+                        "price_selling": price_selling,
+                        "supplier_id": supplier_id,
+                        "quantity_in_stock": 0,
+                        "price_paid": 0
+                    }
+                    result = supabase.table('products').insert(data).execute()
                     st.success(f"✅ Product '{name}' added")
                     st.rerun()
                 except Exception as e:
-                    st.error(f"Error: {e}")
+                    st.error(f"Error adding product: {e}")
+                    
     except Exception as e:
         st.error(f"Products error: {e}")
