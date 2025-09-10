@@ -40,47 +40,72 @@ def show_bom():
 
         # Add new BOM entry
         st.markdown("### ➕ Add BOM Entry")
-        with st.form("add_bom"):
-            # Get finished products
-            finished_response = supabase.table('products').select('id, name, sku').eq('product_type', 'finished').execute()
-            finished_products = pd.DataFrame(finished_response.data) if finished_response.data else pd.DataFrame()
+        
+        # Get finished products
+        finished_response = supabase.table('products').select('id, name, sku').eq('product_type', 'finished').execute()
+        finished_products = pd.DataFrame(finished_response.data) if finished_response.data else pd.DataFrame()
+        
+        # Get raw materials
+        raw_response = supabase.table('products').select('id, name, sku').eq('product_type', 'raw').execute()
+        raw_materials = pd.DataFrame(raw_response.data) if raw_response.data else pd.DataFrame()
+
+        # Check if we have both finished products and raw materials
+        if finished_products.empty or raw_materials.empty:
+            st.warning("⚠️ Please add both finished products and raw materials before creating BOMs.")
             
-            # Get raw materials
-            raw_response = supabase.table('products').select('id, name, sku').eq('product_type', 'raw').execute()
-            raw_materials = pd.DataFrame(raw_response.data) if raw_response.data else pd.DataFrame()
+            col1, col2 = st.columns(2)
+            with col1:
+                if finished_products.empty:
+                    st.error("❌ No finished products found")
+                else:
+                    st.success(f"✅ {len(finished_products)} finished products available")
+                    
+            with col2:
+                if raw_materials.empty:
+                    st.error("❌ No raw materials found")
+                else:
+                    st.success(f"✅ {len(raw_materials)} raw materials available")
+                    
+            # Show help text
+            st.info("💡 **Next steps:**")
+            if finished_products.empty:
+                st.write("• Go to 'Products' page to add finished products")
+            if raw_materials.empty:
+                st.write("• Go to 'Raw Materials' page to add raw materials")
+                
+            return  # Exit the function early, don't show the form
 
-            if not finished_products.empty and not raw_materials.empty:
-                finished_options = [f"{row['name']} ({row['sku']})" for _, row in finished_products.iterrows()]
-                raw_options = [f"{row['name']} ({row['sku']})" for _, row in raw_materials.iterrows()]
+        # If we have both types of products, show the form
+        with st.form("add_bom"):
+            finished_options = [f"{row['name']} ({row['sku']})" for _, row in finished_products.iterrows()]
+            raw_options = [f"{row['name']} ({row['sku']})" for _, row in raw_materials.iterrows()]
 
-                selected_finished = st.selectbox("Finished Product", finished_options)
-                selected_raw = st.selectbox("Raw Material", raw_options)
-                quantity_required = st.number_input("Quantity Required", min_value=0.0, format="%.4f")
-                product_volume = st.number_input("Product Volume", min_value=0.0, format="%.4f")
+            selected_finished = st.selectbox("Finished Product", finished_options)
+            selected_raw = st.selectbox("Raw Material", raw_options)
+            quantity_required = st.number_input("Quantity Required", min_value=0.0, format="%.4f")
+            product_volume = st.number_input("Product Volume", min_value=0.0, format="%.4f")
 
-                submitted = st.form_submit_button("Add BOM Entry")
+            submitted = st.form_submit_button("Add BOM Entry")
 
-                if submitted:
-                    try:
-                        # Get IDs from selected options
-                        finished_id = finished_products.iloc[finished_options.index(selected_finished)]['id']
-                        raw_id = raw_materials.iloc[raw_options.index(selected_raw)]['id']
+            if submitted:
+                try:
+                    # Get IDs from selected options
+                    finished_id = finished_products.iloc[finished_options.index(selected_finished)]['id']
+                    raw_id = raw_materials.iloc[raw_options.index(selected_raw)]['id']
 
-                        data = {
-                            "finished_product_id": finished_id,
-                            "raw_material_id": raw_id,
-                            "quantity_required": quantity_required,
-                            "product_volume": product_volume,
-                            "product_name": selected_finished.split(' (')[0]
-                        }
-                        
-                        result = supabase.table('bill_of_materials').insert(data).execute()
-                        st.success("✅ BOM entry added")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Error adding BOM entry: {e}")
-            else:
-                st.warning("Please add finished products and raw materials before creating BOMs.")
+                    data = {
+                        "finished_product_id": finished_id,
+                        "raw_material_id": raw_id,
+                        "quantity_required": quantity_required,
+                        "product_volume": product_volume,
+                        "product_name": selected_finished.split(' (')[0]
+                    }
+                    
+                    result = supabase.table('bill_of_materials').insert(data).execute()
+                    st.success("✅ BOM entry added successfully!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error adding BOM entry: {e}")
 
     except Exception as e:
         st.error(f"Error loading BOMs: {e}")
