@@ -3,7 +3,7 @@ services:
     name: inventory-app
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: streamlit run main.py --server.port $PORT --server.address 0.0.0.0
+    startCommand: python -m streamlit run run_app.py --server.port $PORT --server.address 0.0.0.0
     envVars:
       - key: SUPABASE_URL
         value: https://abhphxmehiitqhbyenut.supabase.co
