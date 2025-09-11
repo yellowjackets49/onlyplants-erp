@@ -4,7 +4,7 @@ psycopg2-binary
 pandas
 numpy
 requests
-supabase-py
+supabase==1.26.1
 
 # optional extras you mentione
 scikit-learn
