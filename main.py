@@ -8,19 +8,16 @@ if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
 try:
-    # Import modules - use no-cache version for debugging
-    from database.connection_nocache import get_connection
-    # Skip auth for now
-    # from auth.auth_manager import get_auth_manager
-    from pages._dashboard import show_dashboard
-
+    # Fix the import - your file is called connection.py, not connection_nocache.py
+    from database.connection import get_connection
+    
 except ImportError as e:
     st.error(f"❌ Import error: {e}")
     st.stop()
 
 st.set_page_config(page_title="Debug App", layout="wide")
 
-st.title("🔍 Debug Mode")
+st.title("🔍 Debug Mode - Fixed Imports")
 
 # Test connection directly
 try:
