@@ -1,10 +1,10 @@
-streamlit==1.29.0
+streamlit
 sqlalchemy
 psycopg2-binary
 pandas
 numpy
 requests
-supabase==1.26.1
+supabase
 
 # optional extras you mentione
 scikit-learn
