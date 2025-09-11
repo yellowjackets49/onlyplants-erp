@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: inventory-app
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run main_debug.py --server.port $PORT --server.address 0.0.0.0
+    envVars:
+      - key: SUPABASE_URL
+        value: https://abhphxmehiitqhbyenut.supabase.co
+      - key: SUPABASE_KEY
+        value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFiaHBoeG1laGlpdHFoYnllbnV0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc1MDMzMDAsImV4cCI6MjA3MzA3OTMwMH0.vv4uvFy1-Of6fsZ0u3Un-zaAHMrKBAUp7j3flWnkvP4
