@@ -52,7 +52,7 @@ def show_authenticated_app():
         
     except Exception as e:
         st.error(f"❌ Database connection error: {e}")
-        st.error("Please check your Supabase credentials in secrets.toml")
+        st.error("Please check your Supabase environment variables")  # Changed this line
         st.stop()
 
     # Navigation menu
