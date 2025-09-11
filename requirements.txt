@@ -6,7 +6,7 @@ numpy
 requests
 supabase-py
 
-# optional extras you mentioned
+# optional extras you mentione
 scikit-learn
 scipy
 torch
